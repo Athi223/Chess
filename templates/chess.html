@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Chess</title>
+		<meta charset="UTF-8">
+		<link href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" rel="stylesheet">
+		<link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.0/jquery.min.js"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"></script>
+		<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js"></script>
+		<script src="/static/chessboard.js"></script>
+		<script src="https://cdn.tutorialjinni.com/chess.js/0.10.2/chess.js"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.3.0/socket.io.slim.js"></script>
+		<script>
+			var socket = io.connect('http://' + document.domain + ':' + location.port);
+		</script>
+		<style>
+			html, body {
+				height: 100%;
+			}
+			body {
+				background-image: url("{{ url_for('static', filename='chess.jpg') }}");
+				background-size: cover;
+			}
+			#intro {
+				text-align: center;
+				border: 2px solid red;
+				background: linear-gradient(45deg, #fefcea 0%,#f1da36 100%);
+			}
+			.hidden {
+				display: none;
+			}
+			.chatblock {
+				height: 80vh;
+			}
+			.highlight-white {
+				box-shadow: inset 0 0 3px 3px yellow;
+			}
+			.highlight-black {
+				box-shadow: inset 0 0 3px 3px blue;
+			}
+			#status {
+				background-color: #676767cc;
+				padding: 1rem 0;
+				color: aqua;
+				font-weight: bold;
+				text-shadow: 0 0 6px blue;
+			}
+			#myBoard {
+				float: left;
+			}
+			#chat {
+				width: 100%;
+				font-size: 140% ;
+				text-align: start;
+				max-height: 73vh;
+				overflow-y: auto;
+			}
+			b {
+				color: blueviolet;
+			}
+			.popup {
+				position: relative;
+				display: inline-block;
+				cursor: pointer;
+				-webkit-user-select: none;
+				-moz-user-select: none;
+				-ms-user-select: none;
+				user-select: none;
+			}
+
+			/* The actual popup */
+			.popup .popuptext {
+				display: none;
+				background-color: darkorange;
+				text-align: center;
+				border-radius: 6px;
+				padding: 0.5rem 0.5rem;
+				position: absolute;
+				z-index: 1;
+				top: 0%;
+				}
+
+			/* Popup arrow */
+			.popup .popuptext::after {
+				content: "";
+				position: absolute;
+				top: 50%;
+				left: 0%;
+				margin-left: -5px;
+				border-width: 5px;
+				border-style: solid;
+				border-color: darkorange transparent transparent transparent;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="container-fluid h-100">
+			<div class="row h-100 justify-content-center align-items-center">
+				<div id="intro" class="p-5">
+					<h1>Welcome to Chess</h1><br /><br /><br />
+					<div class="visible">
+						<button id="create" class="btn btn-lg btn-success">Create Game</button><br /><br /><br />
+						<button class="btn btn-lg btn-primary" onclick="$('.visible, .hidden').toggle();">Join Game</button>
+					</div>
+					<div class="hidden">
+						<input type="number" min="1" max="100" name="join" placeholder="Enter Room ID"><br /><br /><br />
+						<button id="join" class="btn btn-lg btn-success">Enter</button>
+					</div>
+				</div>
+				<!-- Board start -->
+				<div id="game" style="display: none; text-align: center;">
+					<div class="d-flex">
+						<h3 class="flex-fill my-0 mr-2" id="status"></h3>
+						<button class="btn btn-lg btn-info mr-1" onclick="$('#myPopup').hide();" data-toggle="modal" data-target=".chat-modal">Chat</button>
+						<div class="popup"><h2 class="popuptext" id="myPopup">&#128172;</h2></div>
+					</div>
+					<br>
+					<div id="myBoard" style="width: 800px"></div>
+					
+				</div>
+				<!-- Board end -->
+			</div>  
+		</div>
+		<div class="modal fade" id="myModal" tabindex="-1" role="dialog" data-backdrop="static" aria-hidden="true">
+			<div class="modal-dialog modal-dialog-centered" role="document">
+				<div class="modal-content">
+					<div class="modal-body">
+						<h3>Waiting for other player...</h3><hr>
+						<h4></h4>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="modal fade chat-modal" id="chat_modal" tabindex="-1" role="dialog" aria-labelledby="myLargeModalLabel" aria-hidden="true">
+			<div class="modal-dialog modal-dialog-centered modal-lg">
+			  <div class="modal-content">
+					<div class="chatblock d-flex flex-column align-items-center">
+						<div class="flex-fill p-2 border-bottom" id="chat"></div>
+						<div class="mb-2 px-2 form-inline" style="position: absolute; bottom: 0; width:100%;">
+							<input class="mr-2 form-control form-control-lg" style="width: 88%; " placeholder="Type to chat" name="send">
+							<button class="btn btn-lg btn-primary" onclick="chat();">Send</button>
+						</div>
+					</div>
+			  </div>
+			</div>
+		  </div>
+		<script>
+			var board = null;
+			var $board = $("#myBoard");
+			var game = new Chess();
+			var $status = $('#status');
+			var turn = 'w';
+			var squareClass = 'square-55d63';
+			var squareToHighlight = null;
+			var colorToHighlight = null;
+			var config = {
+				draggable: true,
+				position: 'start',
+				onDragStart: onDragStart,
+				onDrop: onDrop,
+				onSnapEnd: onSnapEnd,
+				onMoveEnd: onMoveEnd
+			}
+			board = Chessboard('myBoard', config)
+			updateStatus()
+			$('#create').on('click', function() {
+				socket.emit('create');
+			});
+			$('#join').on('click', function () {
+				turn = 'b';
+				board.flip();
+				socket.emit('join', { 'room': $('input[name="join"]').val() });
+			});
+			function end(opt) {
+				socket.emit('end', { 'opt': opt });
+				$('h4').html("Waiting for other player's response...");
+			};
+			socket.on('create_room', function(data) {
+				$('h4').html('Your Room ID is: '+data['room']);
+				$('#myModal').modal('show');
+			});
+			socket.on('move_room', function(data) {
+				// see if the move is legal
+				if(data['move'].color !== turn)
+				{
+					var move = game.move({
+						from: data['move'].from,
+						to: data['move'].to,
+						promotion: 'q' // NOTE: always promote to a queen for example simplicity
+					})
+				}
+				if (data['move'].color === 'w') {
+					$board.find('.' + squareClass).removeClass('highlight-white')
+					$board.find('.square-' + data['move'].from).addClass('highlight-white')
+					squareToHighlight = data['move'].to
+					colorToHighlight = 'white'
+				} else {
+					$board.find('.' + squareClass).removeClass('highlight-black')
+					$board.find('.square-' + data['move'].from).addClass('highlight-black')
+					squareToHighlight = data['move'].to
+					colorToHighlight = 'black'
+				}
+				board.position(game.fen())
+				updateStatus();
+			})
+			socket.on('join_room', function(data) {
+				if(data['room'])
+				{
+					$('#myModal').modal('hide');
+					$('#intro, #game').toggle();
+				}
+				else
+				{
+					alert("Room is either Full or Invalid!");
+				}
+			})
+			
+			socket.on('reset', function() {
+				$status.html('White to move');
+				board.start();
+				game.reset();
+				$('#myModal').modal('hide');
+			})
+			socket.on('home', function() {
+				location.reload();
+			})
+
+			socket.on('chat_room', function(data) {
+				var player = (data['player'] === 'b' ? "Black: " : "White: ");
+				if(!$('#chat_modal').is(':visible'))
+				{
+					$('#myPopup').show();
+				}
+				$('#chat').append("<b>"+player+"</b>"+data['msg']+"<br>");
+			})
+
+			function chat() {
+				var msg = $('input[name="send"]').val();
+				$('input[name="send"]').val('');
+				socket.emit('chat', { 'player': turn, 'msg': msg });
+			}
+
+			function onDragStart (source, piece, position, orientation) {
+			// do not pick up pieces if the game is over
+			if (game.game_over()) return false
+
+			// only pick up pieces for the side to move
+			if(game.turn() === turn)
+			{
+				if ((game.turn() === 'w' && piece.search(/^b/) !== -1) || (game.turn() === 'b' && piece.search(/^w/) !== -1))
+					{
+						return false
+					}
+			}
+			else
+				return false;
+			}
+
+			function onDrop (source, target) {
+				var move = game.move({
+					from: source,
+					to: target,
+					promotion: 'q' // NOTE: always promote to a queen for example simplicity
+				})
+				// illegal move
+				if (move === null)
+					return 'snapback';
+				else
+				{
+					socket.emit('move', { 'move': move });
+				}
+			}
+
+			// update the board position after the piece snap
+			// for castling, en passant, pawn promotion
+			function onSnapEnd () {
+				
+			}
+
+			function onMoveEnd () {
+				$board.find('.square-' + squareToHighlight).addClass('highlight-' + colorToHighlight);
+			}
+
+			function updateStatus () {
+			var status = ''
+
+			var moveColor = 'White'
+			if (game.turn() === 'b') {
+				moveColor = 'Black'
+			}
+
+			// checkmate?
+			if (game.in_checkmate()) {
+				status = 'Game over, ' + moveColor + ' is in checkmate.';
+				if(game.turn() === turn)
+					$('h3').html('You Lost!');
+				else
+				$('h3').html('You Won!');
+				$('h4').html('Do you want to start a new game?<span><button class="btn btn-success" onclick="end(\'1\');">Yes</button><button class="btn btn-danger" onclick="end(\'0\');">No</button></span>')
+				setTimeout(function() {
+					$('#myModal').modal('show');
+				}, 5000);
+				
+			}
+
+			// draw?
+			else if (game.in_draw()) {
+				status = 'Game over, drawn position';
+				$('h3').html('Its a Tie!');
+				setTimeout(function() {
+					$('#myModal').modal('show');
+				}, 5000);
+			}
+
+			// game still on
+			else {
+				status = moveColor + ' to move'
+				$status.css({'color': 'aqua'});
+
+				// check?
+				if (game.in_check()) {
+				status += ', ' + moveColor + ' is in check'
+				$status.css({'color': 'red'});
+				}
+			}
+
+			$status.html(status);
+			}
+		</script>
+	</body>
+</html>
