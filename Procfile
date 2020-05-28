@@ -1,1 +1,1 @@
-web: gunicorn -k eventlet chess:app
+web: gunicorn --worker-class eventlet -w 1 chess:app
