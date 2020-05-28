@@ -13,7 +13,12 @@
 		<script src="https://cdn.tutorialjinni.com/chess.js/0.10.2/chess.js"></script>
 		<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.3.0/socket.io.slim.js"></script>
 		<script>
-			var socket = io.connect('https://' + document.domain + ':' + location.port);
+			var prot;
+			if (location.protocol === 'https:')
+				prot = 'https://';
+			else
+				prot = 'http://';
+			var socket = io.connect(prot + document.domain + ':' + location.port);
 		</script>
 		<style>
 			html, body {
